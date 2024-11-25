@@ -1,0 +1,273 @@
+
+===overview===
+
+Maybe start by implementing a single node and verifying that it can transition from Follower to Candidate to Leader correctly
+Maybe I can start by implementing a simple single-node Raft instance, get that working, and then expand to multiple nodes.
+
+Then, add another node and test the communication between them.
+
+Gradually, add more nodes and test different scenarios like leader election, log replication, and fault tolerance.
+
+I need to be careful with edge cases, such as split votes in elections, network delays, and node crashes.
+
+Implementing logging and debugging tools will be helpful to trace the state of each node and the flow of messages.
+
+I should also consider writing unit tests for each component to ensure they work as expected
+
+I need to stay organized, start small, and gradually build up the implementation while continuously testing and verifying correctness.
+
+
+====
+
+First, I need to understand the core concepts of Raft. There are three roles: Follower, Candidate, and Leader. Followers wait for leadership, Candidates try to become Leaders by getting votes, and Leaders manage the cluster by sending heartbeats and log entries.
+
+starting a node from scratch or restarting it from previous state. I need to figure out how to handle both scenarios. Starting from scratch seems straightforward—initialize storage, set configuration, and start the node. Restarting from previous state involves loading snapshots, hard states, and entries from persistent storage.
+
+I should probably use an in-memory storage for now to keep things simple, and then think about persistent storage later. The example uses raft.NewMemoryStorage(), which I can replicate.
+
+Next, starting the node. If starting from scratch, I provide the initial peers. If restarting, the peers are already in the storage.
+
+Let me try to outline the steps in code:
+
+1. Initialize Storage (MemoryStorage for now).
+
+2. Set up Config with node ID, ElectionTick, HeartbeatTick, Storage, etc.
+
+3. Start the node using raft.StartNode() or raft.RestartNode().
+
+4. Set up a loop to handle Node.Ready(), process updates, and call Node.Advance().
+
+5. Handle incoming messages by calling Node.Step().
+
+6. Implement Tick() to trigger elections and heartbeats.
+
+I need to make sure that I handle persistent storage correctly, especially when restarting the node. I should ensure that snapshots, hard states, and entries are correctly applied.
+
+Another thing is handling configuration changes. When adding or removing nodes, I need to propose a ConfChange and apply it after it's committed.
+
+Let me try to sketch a simple example:
+
+- Start three nodes, each with unique IDs.
+
+- Each node initializes its Storage and Config.
+
+- Nodes start and begin communicating with each other.
+
+- One node becomes the leader through election.
+
+- The leader proposes log entries, replicates them to followers.
+
+- Followers acknowledge, entries are committed when replicated to majority.
+
+- Committed entries are applied to the state machine.
+
+Also, error handling: what if a node crashes? How do I handle restarts? I need to ensure that on restart, the node recovers its state from storage and rejoins the cluster correctly.
+
+Maybe start by implementing a single node and verifying that it can transition from Follower to Candidate to Leader correctly.
+
+Then, add another node and test the communication between them.
+
+Gradually, add more nodes and test different scenarios like leader election, log replication, and fault tolerance.
+
+I need to be careful with edge cases, such as split votes in elections, network delays, and node crashes.
+
+Implementing logging and debugging tools will be helpful to trace the state of each node and the flow of messages.
+
+I should also consider writing unit tests for each component to ensure they work as expected.
+
+======state transition=====
+
+Understanding the state transitions is important. For example, when a follower receives a heartbeat, it stays a follower. If it doesn't receive heartbeats for a while, it becomes a candidate and starts an election.
+
+As a candidate, it requests votes and if it gets a majority, it becomes the leader.
+
+As a leader, it sends heartbeats and replicates logs.
+
+I should ensure that term numbers are correctly managed, and that nodes only respond to the highest term they've seen.
+need to handle state transitions based on incoming messages and ticks.
+
+Implementing the Tick() function should increment a timer for the election or heartbeat, and trigger the appropriate state transitions.
+
+For example, in Follower state, if no heartbeat is received within ElectionTick, transition to Candidate.
+
+In Candidate state, request votes and if majority is received, transition to Leader.
+
+In Leader state, send heartbeats and replicate logs.
+
+====log=====
+
+
+
+Implementing the log replication mechanism is crucial. The leader needs to track the progress of each follower, send them the necessary entries, and handle cases where followers are slow or have conflicting logs.
+
+Each log entry should have an index, term, and data.
+
+I need to handle cases where logs are inconsistent, such as when a follower has an older term at a given index.
+
+In such cases, the leader should rollback its log to match the follower's log up to the point of consistency, and then append new entries.
+
+This is where the NextIndex and MatchIndex arrays come into play, tracking the progress of each follower.
+
+I need to implement these arrays to keep track of which entries have been sent to each follower and which have been acknowledged.
+
+When a leader sends a new entry, it should increment NextIndex for that follower and wait for an acknowledgment.
+
+If an acknowledgment is received, it can advance NextIndex and MatchIndex for that follower.
+
+If a timeout occurs, the leader should resend the entry.
+
+Implementing AppendEntries RPC:
+
+- The leader sends its currentTerm, log entries, commitIndex, etc.
+
+- The follower responds with success or failure based on log consistency.
+
+Handling log consistency:
+
+- If the follower's log has an entry at the same index but different term, the leader needs to rollback its log to match the follower's log up to the point of inconsistency.
+
+- Then, the leader can append new entries.
+
+This seems tricky. I need to implement log compaction or truncation in such cases.
+
+
+Heartbeats: Leaders send heartbeats to maintain leadership.
+
+Log Replication: Leaders replicate log entries to Followers.
+
+=======snapshots=======
+
+Manage log size by taking snapshots of the state machine.
+
+
+Handling snapshots is another complexity. I need to ensure that snapshots capture the current state and that they're correctly applied on all nodes.
+
+Handling snapshots is another layer of complexity. When the log becomes too large, the leader can send a snapshot to a follower to bring it up to date.
+
+I need to decide when to take a snapshot, maybe after a certain number of entries have been committed.
+
+Applying a snapshot should replace the entire log with the snapshot data.
+
+I need to ensure that snapshots are correctly applied and that the state machine is consistent across all nodes.
+
+Implementing snapshots:
+
+- When the log becomes too large, take a snapshot of the current state.
+
+- Send the snapshot to followers who are behind.
+
+- Followers apply the snapshot and discard their old logs.
+
+I need to decide on a snapshot format, maybe a binary encoding of the state machine.
+
+=======state machine====
+
+Implementing the state machine is up to me. For simplicity, I can have a simple key-value store or just log the entries.
+
+I need to make sure that committed entries are applied in order and that the state machine is consistent.
+
+Implementing the state machine:
+
+- For simplicity, I can have a map that represents the state.
+
+- Apply committed log entries to update the state.
+
+- Ensure that all nodes apply entries in the same order to maintain consistency.
+
+======configuration=====
+
+Handling configuration changes is also important. When adding or removing nodes, I need to propose a ConfChange entry, have it committed, and then apply the change by updating the cluster configuration.
+
+I should ensure that configuration changes are done one at a time to maintain consistency.
+
+I need to be careful with node IDs; they must be unique and not reused.
+
+
+
+===== election =====
+
+Implementing the Tick() function is essential for triggering elections and heartbeats. I need to manage two timers: one for election timeout and one for heartbeat timeout.
+
+In Follower and Candidate states, I need an election timeout timer. In Leader state, I need a heartbeat timer.
+
+When the election timeout fires, the node transitions to Candidate and starts an election.
+
+When the heartbeat timeout fires, the leader sends heartbeats to followers.
+
+I need to ensure that the timers are reset appropriately when heartbeats or messages are received.
+
+Implementing the election process:
+
+1. Increment currentTerm.
+
+2. Vote for self.
+
+3. Send RequestVote RPCs to all other nodes.
+
+4. If votes received from majority, become Leader.
+
+5. Otherwise, if a message is received from a node with a higher term, step down to Follower.
+
+Implementing the RequestVote RPC:
+
+- The candidate sends its currentTerm, lastLogIndex, and lastLogTerm to the voter.
+
+- The voter responds with VoteGranted if:
+
+  - Its currentTerm < candidate's currentTerm.
+
+  - It hasn't voted for anyone in this term.
+
+  - Its log is not more up-to-date than the candidate's log.
+
+Election Timeout: Triggers a Follower to become a Candidate.
+
+Voting: Candidates request votes; a majority vote makes a Candidate the Leader.
+
+
+
+====network====
+
+
+Handling network communication:
+
+- Since I'm implementing from scratch, I can simulate message passing using Go channels.
+
+- Later, I can think about using TCP or UDP for actual network communication.
+
+
+
+==== config changes ===
+
+
+Implementing conf changes:
+
+- Propose a ConfChange entry.
+
+- Once committed, apply the change by updating the cluster configuration.
+
+- Ensure that configuration changes don't violate the safety properties of Raft.
+
+
+
+=====Roles of Nodes:
+
+Follower: Waits for leadership instructions.
+
+Candidate: Seeks votes to become the leader.
+
+Leader: Manages the cluster, sends heartbeats, and replicates logs.
+
+
+
+
+
+
+
+
+
+
+
+
+
+

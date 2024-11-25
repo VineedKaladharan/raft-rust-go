@@ -1,0 +1,62 @@
+# Rust specific ignores
+**/target/
+**/target\
+**\target\
+**\target/
+**/*.rs.bk
+**/Cargo.lock
+*.pdb
+
+# Go specific ignores
+**/*.exe
+**/*.exe~
+**/*.dll
+**/*.so
+**/*.dylib
+**/*.test
+**/*.out
+**/go.work
+**/vendor/
+**/*.exe\
+**/*.exe~\
+**/*.dll\
+**/*.so\
+**/*.dylib\
+**/*.test\
+**/*.out\
+**/go.work\
+**/vendor\
+
+# Binary files
+**/bin/
+**/bin\
+**\bin/
+**\bin\
+**/dist/
+**/dist\
+**\dist/
+**\dist\
+
+# IDE specific files
+**/.idea/
+**/.idea\
+**\.idea/
+**\.idea\
+**/.vscode/
+**/.vscode\
+**\.vscode/
+**\.vscode\
+**/*.swp
+**/*.swp\
+**/*.swo
+**/*.swo\
+**/.DS_Store
+**/.DS_Store\
+**\.DS_Store
+**\.DS_Store\
+
+# Debug files
+**/debug/
+**/debug\
+**\debug/
+**\debug\
