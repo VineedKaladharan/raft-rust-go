@@ -8,6 +8,7 @@ import (
 	"log"       // Package for logging
 	"os"        // Package for OS functionality
 	"os/signal" // Package for handling OS signals
+	"sync"      // Package for synchronization primitives
 	"syscall"   // Package for system call primitives
 	"time"      // Package for time-related functions
 )
@@ -23,25 +24,52 @@ const (
 func createRaftCluster(numServers int) ([]*server.RaftServer, error) {
 	// Initialize slice to hold server instances
 	servers := make([]*server.RaftServer, numServers)
+	errChan := make(chan error, numServers)
+	var wg sync.WaitGroup
 	
-	// Create and start each server in the cluster
+	// Create and start each server in the cluster concurrently
 	for i := 0; i < numServers; i++ {
-		// Calculate port for this server
-		port := basePort + i
-		// Create new server instance
-		srv, err := server.NewRaftServer(i+1, port)
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			
+			// Calculate port for this server
+			port := basePort + index
+			
+			// Create new server instance
+			srv, err := server.NewRaftServer(index+1, port)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to create server %d: %v", index+1, err)
+				return
+			}
+			
+			// Start the server
+			if err := srv.Start(); err != nil {
+				errChan <- fmt.Errorf("failed to start server %d: %v", index+1, err)
+				return
+			}
+			
+			// Store server in slice
+			servers[index] = srv
+			log.Printf("Started Raft server %d on port %d", index+1, port)
+		}(i)
+	}
+	
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(errChan)
+	
+	// Check for any errors
+	for err := range errChan {
 		if err != nil {
-			return nil, fmt.Errorf("failed to create server %d: %v", i+1, err)
+			// Cleanup any started servers
+			for _, srv := range servers {
+				if srv != nil {
+					srv.Stop()
+				}
+			}
+			return nil, err
 		}
-		
-		// Start the server
-		if err := srv.Start(); err != nil {
-			return nil, fmt.Errorf("failed to start server %d: %v", i+1, err)
-		}
-		
-		// Store server in slice
-		servers[i] = srv
-		log.Printf("Started Raft server %d on port %d", i+1, port)
 	}
 	
 	return servers, nil

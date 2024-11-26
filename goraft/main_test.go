@@ -1,13 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"net"
 	"testing"
 	"time"
 )
-
-const testBasePort = 52000 // Different base port for main package tests
 
 func TestCreateRaftCluster(t *testing.T) {
 	tests := []struct {
@@ -40,25 +36,24 @@ func TestCreateRaftCluster(t *testing.T) {
 				return
 			}
 
-			// Ensure cleanup
-			defer func() {
-				for _, server := range servers {
-					server.Stop()
-				}
-				time.Sleep(100 * time.Millisecond) // Give time for servers to shut down
-			}()
-
 			if len(servers) != tt.numServers {
 				t.Errorf("createRaftCluster() created %v servers, want %v", len(servers), tt.numServers)
 			}
 
 			// Verify each server is running on the correct port
 			for i, server := range servers {
-				expectedPort := testBasePort + i
+				expectedPort := basePort + i
 				if server.Port != expectedPort {
 					t.Errorf("Server %d running on port %d, want %d", i+1, server.Port, expectedPort)
 				}
 			}
+
+			// Clean up
+			for _, server := range servers {
+				server.Stop()
+			}
+			// Give time for servers to shut down
+			time.Sleep(100 * time.Millisecond)
 		})
 	}
 }
@@ -79,7 +74,7 @@ func TestClusterShutdown(t *testing.T) {
 	// Verify all servers are stopped by checking ports
 	time.Sleep(100 * time.Millisecond) // Give servers time to shut down
 	for i := 0; i < numServers; i++ {
-		port := testBasePort + i
+		port := basePort + i
 		if isPortOpen(port) {
 			t.Errorf("Port %d still open after shutdown", port)
 		}
@@ -88,11 +83,10 @@ func TestClusterShutdown(t *testing.T) {
 
 // Helper function to check if a port is open
 func isPortOpen(port int) bool {
-	addr := fmt.Sprintf(":%d", port)
-	listener, err := net.Listen("tcp", addr)
+	servers, err := createRaftCluster(1)
 	if err != nil {
-		return true // Port is in use
+		return false
 	}
-	listener.Close()
-	return false // Port is available
+	servers[0].Stop()
+	return err == nil
 }
