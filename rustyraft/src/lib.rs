@@ -122,13 +122,79 @@ pub async fn create_and_run_servers(num_servers: usize) -> Option<usize> {
                 3000, // 3 seconds base timeout
             );
             let state_clone = shared_state.clone();
-
-            // Spawn each server in its own async task
+            
+            // Understanding Ownership with 'move':
+            // ---------------------------------
+            // In Java, variable capture is implicit:
+            //   executorService.submit(() -> {
+            //       server.run(stateClone);  // Variables captured by reference
+            //   });
+            //
+            // In Rust, we must be explicit with 'move':
+            //   // ❌ Without move - Compiler Error:
+            //   tokio::spawn(async {
+            //       server.run(state_clone)  // Error: server might not live long enough
+            //   });
+            //
+            //   // ✅ With move - Ownership transferred:
+            //   tokio::spawn(async move {
+            //       server.run(state_clone)  // Variables now owned by this task
+            //   });
+            //
+            // What 'move' does (in Java terms):
+            //   final Server serverCopy = server;          // Take ownership
+            //   final State stateCloneCopy = stateClone;  // Take ownership
+            //   executorService.submit(() -> {
+            //       serverCopy.run(stateCloneCopy);       // Use owned copies
+            //   });
+            //   // Original variables can't be used anymore!
+            
             tokio::spawn(async move { server.run(state_clone).await })
         })
         .collect();
+    // Can't use server or state_clone here anymore!
 
-    // Keep the servers running
+    // Understanding the Server Handles:
+    // ------------------------------
+    // When we spawn async tasks with tokio::spawn, it returns a JoinHandle
+    // (similar to Java's Future). This is a promise for a future result.
+    //
+    // Example in Rust:
+    //   let handles: Vec<_> = (0..num_servers)
+    //       .map(|id| {
+    //           tokio::spawn(async move { ... })  // Returns JoinHandle
+    //       })
+    //       .collect();
+    //
+    // Java equivalent:
+    //   List<Future<?>> futures = servers.stream()
+    //       .map(server -> executorService.submit(() -> { ... }))
+    //       .collect(Collectors.toList());
+    //
+    // Why We Need the Loop:
+    // -------------------
+    // Without the loop:
+    //   pub async fn create_and_run_servers(num_servers: usize) -> Option<usize> {
+    //       // ... spawn servers ...
+    //       return final_state.leader_id;  // ❌ Returns immediately, servers die!
+    //   }
+    //
+    // With the loop:
+    //   pub async fn create_and_run_servers(num_servers: usize) -> Option<usize> {
+    //       // ... spawn servers ...
+    //       for handle in handles {
+    //           let _ = handle.await;  // ✅ Keeps servers alive
+    //       }
+    //       return final_state.leader_id;
+    //   }
+    //
+    // Benefits:
+    // --------
+    // 1. Keeps Program Alive: Prevents main thread from exiting
+    // 2. Error Propagation: Allows handling of server failures
+    // 3. Resource Management: Ensures proper cleanup
+    
+    // Wait for all servers to complete
     for handle in handles {
         let _ = handle.await;
     }
