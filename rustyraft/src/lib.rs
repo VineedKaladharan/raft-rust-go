@@ -1,11 +1,11 @@
 // Required imports for the Raft implementation
-use std::time::Duration;
-use tokio::time::sleep;
-use rand::Rng;
 use log::info;
+use rand::Rng;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::time::Duration;
 use tokio::sync::broadcast;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 
 // Server state enum representing possible states in Raft protocol
 #[derive(Debug, Clone, PartialEq)]
@@ -43,10 +43,13 @@ impl RaftServer {
 
     // Main server runtime function
     pub async fn run(&mut self, shared_state: Arc<Mutex<SharedState>>) {
-        info!("Server {} starting on port {} with timeout {}ms", self.id, self.port, self.timeout_ms);
-        
+        info!(
+            "Server {} starting on port {} with timeout {}ms",
+            self.id, self.port, self.timeout_ms
+        );
+
         let state_clone = shared_state.clone();
-        
+
         // Get heartbeat channel
         let mut heartbeat_rx = {
             let state = shared_state.lock().await;
@@ -57,12 +60,21 @@ impl RaftServer {
             match self.state {
                 ServerState::Follower => {
                     // Create RNG inside the loop to avoid Send trait issues
-                    let timeout = self.timeout_ms + rand::thread_rng().gen_range(0..self.timeout_ms);
+                    let timeout =
+                        self.timeout_ms + rand::thread_rng().gen_range(0..self.timeout_ms);
                     let timeout_duration = Duration::from_millis(timeout);
-                    
+
                     tokio::select! {
-                        _ = sleep(timeout_duration) => {
+                    //It's like having two parallel tasks:
+                    // ⏰ Task 1: "Wake me up after timeout_duration"
+                    // 📨 Task 2: "Tell me if you get a heartbeat message"
+                    // Whichever happens first:
+                    // If the timer wakes up first (no heartbeat received) → Try to become leader
+                    // If a heartbeat arrives before timeout → Stay as follower
+                        _ = sleep(timeout_duration) => { 
+                            // First branch
                             // No heartbeat received, initiate election
+                            // "Hey, the timeout happened! Let's try to become leader"
                             let mut state = state_clone.lock().await;
                             if !state.leader_elected {
                                 state.leader_elected = true;
@@ -71,7 +83,9 @@ impl RaftServer {
                                 info!("Server {} timed out and became Leader", self.id);
                             }
                         }
-                        Ok(leader_id) = heartbeat_rx.recv() => {
+                        Ok(leader_id) = heartbeat_rx.recv() => { 
+                            // Second branch
+                            // "Hey, got a heartbeat! Stay as follower"
                             info!("Server {} received heartbeat from Leader {}", self.id, leader_id);
                             // Simply increment heartbeat counter
                             self.last_heartbeat += 1;
@@ -93,7 +107,7 @@ impl RaftServer {
 // Function to create and manage multiple Raft servers
 pub async fn create_and_run_servers(num_servers: usize) -> Option<usize> {
     let (heartbeat_tx, _) = broadcast::channel(16);
-    
+
     let shared_state = Arc::new(Mutex::new(SharedState {
         leader_elected: false,
         leader_id: None,
@@ -110,9 +124,7 @@ pub async fn create_and_run_servers(num_servers: usize) -> Option<usize> {
             let state_clone = shared_state.clone();
 
             // Spawn each server in its own async task
-            tokio::spawn(async move {
-                server.run(state_clone).await
-            })
+            tokio::spawn(async move { server.run(state_clone).await })
         })
         .collect();
 
