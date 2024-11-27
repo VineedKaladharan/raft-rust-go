@@ -136,9 +136,12 @@ func (s *RaftServer) becomeLeader() {
 	defer globalMutex.Unlock()
 
 	select {
-	case leaderElected <- struct{}{}: // Try to signal leader election
+		//struct{} defines an empty struct type (a struct with no fields). The second {} instantiates this empty struct type. Think of it like a notification ping - the fact that something was sent through the channel is what matters, not what was sent. Using struct{}{} is more memory efficient than sending a boolean or integer when you don't need the actual value.
+	case leaderElected <- struct{}{}:
+		 // Try to signal leader election
 		s.state = Leader
-		s.currentTerm++ // Increment term upon becoming leader
+		s.currentTerm++ 
+		// Increment term upon becoming leader
 		log.Printf("Server %d: Yay, I am first! Becoming Leader", s.ID)
 		if s.electionTimer != nil {
 			s.electionTimer.Stop()

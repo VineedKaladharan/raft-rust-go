@@ -65,20 +65,97 @@ Vineed Kaladharan
 
 ### Go Implementation
 
+#### Architecture and Flow
+
+##### 1. Cluster Creation Flow
+```
+main() → createRaftCluster()
+├── For each server (concurrent):
+│   ├── NewRaftServer(id, port)
+│   │   ├── Initialize RaftServer struct
+│   │   └── Set initial state as Follower
+│   └── server.Start()
+│       ├── Start RPC server
+│       └── resetElectionTimer()
+```
+
+##### 2. Election Process Flow
+```
+Election Timer Expires
+├── State changes to Candidate
+├── Increment currentTerm
+├── Vote for self
+├── Send RequestVote RPCs to all peers
+└── If majority votes received:
+    └── becomeLeader()
+        ├── Change state to Leader
+        ├── Cancel election timer
+        └── startHeartbeat()
+```
+
+##### 3. Heartbeat Process Flow
+```
+Leader's startHeartbeat()
+├── Create heartbeat timer (interval: 15ms)
+└── On timer tick:
+    └── sendHeartbeats()
+        ├── For each peer:
+        │   ├── Prepare HeartbeatArgs
+        │   └── Send Heartbeat RPC
+        └── Handle responses:
+            ├── Update term if needed
+            └── Step down if higher term seen
+```
+
+#### Key Components
+
+##### Server States
+- **Follower**: Initial state of all servers
+- **Candidate**: State during election process
+- **Leader**: State after winning an election
+
+##### Timeouts
+- **Election Timeout**: Random duration between 150-300ms
+- **Heartbeat Interval**: Fixed at 15ms
+
+##### Key Mechanisms
+1. **Leader Election**
+   - Triggered by election timeout
+   - Requires majority votes to become leader
+   - Uses term numbers to maintain consistency
+
+2. **Heartbeat System**
+   - Regular heartbeats from leader to maintain authority
+   - Prevents unnecessary elections
+   - Resets follower election timers
+
+3. **Term Management**
+   - Monotonically increasing term numbers
+   - Used to detect stale leaders
+   - Helps maintain cluster consistency
+
+#### Implementation Details
+
+The implementation uses Go's standard libraries:
+- `net/rpc` for RPC communication
+- `sync` for mutex and synchronization
+- `time` for timer management
+
+##### Key Structures
+- `RaftServer`: Main server structure
+- `RaftRPC`: RPC interface implementation
+- Various RPC argument and reply structures for voting and heartbeat mechanisms
+
+#### Running the Go Implementation
+
+To start a Raft cluster:
 ```bash
-# Build the Go implementation
-cd raft-go
-go build
- ./raft-go
+cd goraft
+go run main.go -n <number_of_servers>
+```
+Default number of servers is 3 if not specified.
 
-# Or run directly without building
-# Run with default 3 servers
-go run main.go
-
-# Run with custom number of servers (e.g., 5)
-go run main.go -n 5
-
-Example output:
+### Go Implementation Example Output
 ```bash
 2024/11/26 14:17:17 Creating Raft cluster with 5 servers...
 2024/11/26 14:17:17 Server 1 started on port 52000 as Follower
@@ -120,27 +197,94 @@ Example output:
 2024/11/26 14:17:40 rpc.Serve: accept:accept tcp 127.0.0.1:52003: use of closed network connection
 2024/11/26 14:17:40 rpc.Serve: accept:accept tcp 127.0.0.1:52004: use of closed network connection
 2024/11/26 14:17:41 Raft cluster shutdown complete.
-
-# Run all tests
-go test ./...
-
-# Run tests with coverage
-go test -cover ./...
-
-# Run tests verbosely
-go test -v ./...
 ```
 
 ### Rust Implementation
 
+#### Architecture and Flow
+
+##### 1. Node Creation and Initialization
+```
+RawNode::new(config, storage, logger)
+├── Create Raft instance
+│   ├── Initialize ProgressTracker
+│   ├── Setup RaftLog with storage
+│   └── Set initial state as Follower
+├── Load initial state
+│   ├── Load HardState if exists
+│   └── Apply committed entries
+└── Start election timer
+```
+
+##### 2. Election Process
+```
+Election Timer Expires
+├── Increment term
+├── Change state to Candidate
+├── Vote for self
+├── Send RequestVote RPCs
+│   ├── Include last log index/term
+│   └── Wait for responses
+└── If majority votes received:
+    ├── Change state to Leader
+    ├── Initialize volatile leader state
+    └── Start sending heartbeats
+```
+
+##### 3. Heartbeat Mechanism
+```
+Leader's tick_heartbeat()
+├── Increment heartbeat counter
+├── If heartbeat_elapsed >= timeout:
+│   ├── Reset heartbeat timer
+│   ├── Send MsgBeat to self
+│   └── Broadcast heartbeats to followers
+└── Handle responses:
+    ├── Update progress
+    ├── Check term
+    └── Step down if higher term seen
+```
+
+#### Key Components
+
+##### Core Structures
+- `RawNode`: Main interface for external interaction
+- `Raft`: Core consensus logic implementation
+- `Storage`: Interface for persistent state
+- `ProgressTracker`: Tracks peer progress and voting
+
+##### Timeouts and Intervals
+- **Heartbeat Tick**: Every 3 ticks
+- **Election Tick**: 10 ticks
+- **Base Tick**: 100ms (configurable)
+
+##### State Management
+1. **Volatile State**
+   - Current term
+   - Vote history
+   - Log entries
+
+2. **Persistent State**
+   - Hard state (term, vote, commit)
+   - Log entries
+   - Snapshot metadata
+
+#### Running the Rust Implementation
+
+To start a Raft cluster:
 ```bash
-# Build and run the Rust implementation
 cd rustyraft
-cargo build
 cargo run
+```
 
+The implementation supports:
+- Custom storage backends
+- Configurable timeouts
+- Snapshot and log compaction
+- Leader election and transfer
+- Dynamic membership changes
 
-## Example Output:
+### Rust Implementation Example Output
 ```bash
 [2024-11-26T10:24:12Z INFO  rustyraft] Starting Raft cluster with 5 servers...
 [2024-11-26T10:24:12Z INFO  rustyraft] Server 2 starting on port 8002 with timeout 3000ms    
