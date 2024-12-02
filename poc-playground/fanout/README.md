@@ -2,11 +2,10 @@
 
 This system implements a distributed leader election mechanism using Go's concurrency features and the Fan-out pattern for message distribution.
 
-## Architecture
+## System Architecture
 
+### Component Diagram
 ```
-Architecture Diagram:
-
 +----------------+     +-----------------+     +----------------+
 |     State      |     |     Fanout     |     |    Message    |
 |----------------|     |-----------------|     |----------------|
@@ -22,8 +21,10 @@ Architecture Diagram:
               +-----------+      +-----------+
               |  Leader   |      | Follower  |
               +-----------+      +-----------+
+```
 
-Flow:
+### Control Flow
+```
 [1] Node Election Process
     main() → runNodeElection() → [Becomes Leader or Follower]
                 ↓
@@ -33,6 +34,39 @@ Flow:
     ↓                       ↓
     Publish Messages       handleFollowerMessage
 ```
+
+### Message Flow
+```
+Leader                    Fanout                     Follower
+  |                         |                          |
+  |-- Publish(msg) ------→ |                          |
+  |                        |-- distribute to channels--|
+  |                        |                          |
+  |                        |-------- msgChan -------→ |
+  |                        |                          |-- handleFollowerMessage()
+```
+
+### Channel Distribution Mechanism
+
+#### Message Flow Process
+1. **Leader to Fanout**:
+   - Leader publishes messages to Fanout's input channel
+   - Messages include leader announcements and heartbeats
+
+2. **Fanout Distribution**:
+   - Fanout's `run()` goroutine manages message distribution
+   - Receives messages from input channel
+   - Distributes to all subscriber channels
+
+3. **Follower Reception**:
+   - Each follower has a dedicated message channel
+   - Followers process messages through `handleFollowerMessage()`
+
+#### Design Benefits
+- **Isolation**: Each follower has its own channel, preventing message conflicts
+- **Buffering**: Channels buffer up to 10 messages, allowing for message queuing
+- **Centralization**: Fanout pattern provides centralized message distribution
+- **Performance**: Non-blocking sends prevent slow followers from affecting others
 
 ## Component Relationships
 
