@@ -142,7 +142,7 @@ func (s *RaftServer) becomeLeader() {
 		s.state = Leader
 		s.currentTerm++ 
 		// Increment term upon becoming leader
-		log.Printf("Server %d: Yay, I am first! Becoming Leader", s.ID)
+		log.Printf("Server %d: Yay, I am first! Becoming Leader", s.ID) 
 		if s.electionTimer != nil {
 			s.electionTimer.Stop()
 		}
